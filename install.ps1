@@ -1,5 +1,5 @@
 # ============================================================
-# Lunor Download Engine — Unified Installer / Uninstaller
+# Lunor Download Engine - Unified Installer / Uninstaller
 # ============================================================
 # Usage:
 #   Install:    irm https://raw.githubusercontent.com/Roodies/lunor-engine/main/install.ps1 | iex
@@ -23,7 +23,7 @@ if ($args -contains '--uninstall') { $uninstall = $true }
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# ── Constants ──
+# -- Constants --
 $AppName     = "Lunor Download Engine"
 $InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
 $ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
@@ -31,7 +31,7 @@ $HostName    = "com.downloadorganizer.folderhelper"
 $ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
 $DownloadUrl = "https://github.com/Roodies/lunor-engine/releases/latest/download/LunorEngineSetup.exe"
 
-# ── Detection ──
+# -- Detection --
 function Test-HelperInstalled {
     if (-not (Test-Path $ExePath)) { return $false }
     $regPath = "HKCU:\SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName"
@@ -40,7 +40,7 @@ function Test-HelperInstalled {
     return $false
 }
 
-# ── Uninstall Logic ──
+# -- Uninstall Logic --
 function Invoke-Uninstall {
     Write-Host ""
     Write-Host "  Uninstalling $AppName..." -ForegroundColor Cyan
@@ -94,25 +94,29 @@ function Invoke-Uninstall {
     Write-Host ""
 }
 
-# ── Install Logic ──
+# -- Install Logic --
 function Invoke-Install {
     Write-Host ""
     Write-Host "  ======================================================" -ForegroundColor Cyan
-    Write-Host "     $AppName — Installer" -ForegroundColor Cyan
+    Write-Host "     $AppName - Installer" -ForegroundColor Cyan
     Write-Host "  ======================================================" -ForegroundColor Cyan
     Write-Host ""
 
     $tempExe = Join-Path $env:TEMP "LunorEngineSetup.exe"
 
     # 1. Check for local copy first (for offline/dev installs)
-    $localExe = Join-Path $PSScriptRoot "LunorEngineSetup.exe"
-    $localExeFallback = Join-Path $PSScriptRoot "installer\Output\LunorEngineSetup.exe"
+    $localExe = $null
+    $localExeFallback = $null
+    if ($PSScriptRoot) {
+        $localExe = Join-Path $PSScriptRoot "LunorEngineSetup.exe"
+        $localExeFallback = Join-Path $PSScriptRoot "installer\Output\LunorEngineSetup.exe"
+    }
 
-    if ($PSScriptRoot -and (Test-Path $localExe)) {
+    if ($localExe -and (Test-Path $localExe)) {
         Write-Host "  [1/3] Using local installer: $localExe" -ForegroundColor Gray
         $tempExe = $localExe
     }
-    elseif ($PSScriptRoot -and (Test-Path $localExeFallback)) {
+    elseif ($localExeFallback -and (Test-Path $localExeFallback)) {
         Write-Host "  [1/3] Using local installer: $localExeFallback" -ForegroundColor Gray
         $tempExe = $localExeFallback
     }
@@ -177,7 +181,7 @@ function Invoke-Install {
     }
 }
 
-# ── Main Entry Point ──
+# -- Main Entry Point --
 $isInstalled = Test-HelperInstalled
 
 if ($uninstall) {
@@ -192,7 +196,7 @@ if ($uninstall) {
     }
 }
 elseif ($isInstalled) {
-    # Already installed — act as uninstaller
+    # Already installed - act as uninstaller
     if ($silent) {
         # Silent mode: just inform, don't uninstall without explicit --uninstall flag
         Write-Host ""
@@ -203,7 +207,7 @@ elseif ($isInstalled) {
     else {
         Write-Host ""
         Write-Host "  ======================================================" -ForegroundColor Cyan
-        Write-Host "     $AppName — Already Installed" -ForegroundColor Cyan
+        Write-Host "     $AppName - Already Installed" -ForegroundColor Cyan
         Write-Host "  ======================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  The helper is already installed at:" -ForegroundColor White
@@ -221,6 +225,6 @@ elseif ($isInstalled) {
     }
 }
 else {
-    # Not installed — install
+    # Not installed - install
     Invoke-Install
 }
