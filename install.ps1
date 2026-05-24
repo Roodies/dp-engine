@@ -29,7 +29,7 @@ $InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
 $ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
 $HostName    = "com.downloadorganizer.folderhelper"
 $ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
-$DownloadUrl = "https://github.com/Roodies/lunor-engine/releases/latest/download/LunorEngineSetup.exe"
+$DownloadUrl = "https://github.com/Roodies/lunor-engine/releases/latest/download/payload.zip"
 
 # -- Detection --
 function Test-HelperInstalled {
@@ -102,64 +102,158 @@ function Invoke-Install {
     Write-Host "  ======================================================" -ForegroundColor Cyan
     Write-Host ""
 
-    $tempExe = Join-Path $env:TEMP "LunorEngineSetup.exe"
+    $tempZip = Join-Path $env:TEMP "payload.zip"
 
-    # 1. Check for local copy first (for offline/dev installs)
-    $localExe = $null
-    $localExeFallback = $null
+    # 1. Check for local payload first (for offline/dev installs)
+    $localZip = $null
+    $localZipFallback = $null
     if ($PSScriptRoot) {
-        $localExe = Join-Path $PSScriptRoot "LunorEngineSetup.exe"
-        $localExeFallback = Join-Path $PSScriptRoot "installer\Output\LunorEngineSetup.exe"
+        $localZip = Join-Path $PSScriptRoot "payload.zip"
+        $localZipFallback = Join-Path $PSScriptRoot "installer\Output\payload.zip"
     }
 
-    if ($localExe -and (Test-Path $localExe)) {
-        Write-Host "  [1/3] Using local installer: $localExe" -ForegroundColor Gray
-        $tempExe = $localExe
+    if ($localZip -and (Test-Path $localZip)) {
+        Write-Host "  [1/3] Using local payload: $localZip" -ForegroundColor Gray
+        $tempZip = $localZip
     }
-    elseif ($localExeFallback -and (Test-Path $localExeFallback)) {
-        Write-Host "  [1/3] Using local installer: $localExeFallback" -ForegroundColor Gray
-        $tempExe = $localExeFallback
+    elseif ($localZipFallback -and (Test-Path $localZipFallback)) {
+        Write-Host "  [1/3] Using local payload: $localZipFallback" -ForegroundColor Gray
+        $tempZip = $localZipFallback
     }
     else {
         # Download from GitHub
-        Write-Host "  [1/3] Downloading installer..." -ForegroundColor Gray
+        Write-Host "  [1/3] Downloading payload archive..." -ForegroundColor Gray
         try {
-            Invoke-WebRequest -Uri $DownloadUrl -OutFile $tempExe -UseBasicParsing
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $tempZip -UseBasicParsing
             Write-Host "         Downloaded successfully." -ForegroundColor Green
         }
         catch {
             Write-Host ""
-            Write-Host "  ERROR: Failed to download the installer." -ForegroundColor Red
+            Write-Host "  ERROR: Failed to download the payload archive." -ForegroundColor Red
             Write-Host "  URL: $DownloadUrl" -ForegroundColor Red
             Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "  Please check your internet connection and try again." -ForegroundColor Yellow
-            Write-Host "  Or download manually from:" -ForegroundColor Yellow
-            Write-Host "  $DownloadUrl" -ForegroundColor Yellow
             Write-Host ""
             return
         }
     }
 
-    # 2. Run the installer silently
-    Write-Host "  [2/3] Installing engine..." -ForegroundColor Gray
+    # 2. Extract payload directly to local appdata folder
+    Write-Host "  [2/3] Installing engine files..." -ForegroundColor Gray
     try {
-        Start-Process -FilePath $tempExe -ArgumentList "--silent" -Wait -NoNewWindow
+        if (Test-Path $InstallDir) {
+            # Try to stop running instances first
+            Get-Process -Name "DownloadOrganizerHelper" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 100
+            Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+        Expand-Archive -Path $tempZip -DestinationPath $InstallDir -Force
     }
     catch {
         Write-Host ""
-        Write-Host "  ERROR: Failed to run the installer." -ForegroundColor Red
+        Write-Host "  ERROR: Failed to install engine files." -ForegroundColor Red
         Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host ""
         return
     }
 
-    # 3. Clean up temp download (only if we downloaded it)
-    if ($tempExe -eq (Join-Path $env:TEMP "LunorEngineSetup.exe") -and (Test-Path $tempExe)) {
-        Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
+    # 3. Generate native messaging manifest json
+    Write-Host "        Generating manifest file..." -ForegroundColor Gray
+    try {
+        $manifest = @{
+            name = $HostName
+            description = "$AppName - Native Helper"
+            path = $ExePath.Replace("/", "\\")
+            type = "stdio"
+            allowed_origins = @(
+                "chrome-extension://ddmkkklonogdgngnhpfmidconkgfkjic/",
+                "chrome-extension://eianiiieigdplanmjjlchcjpebdcggal/"
+            )
+        }
+        $manifest | ConvertTo-Json -Depth 5 | Out-File -FilePath "$InstallDir\manifest.json" -Encoding utf8 -Force
+    }
+    catch {
+        Write-Host "  WARNING: Failed to generate native messaging manifest." -ForegroundColor Yellow
     }
 
-    # 4. Verify installation
+    # 4. Copy uninstaller script (download if piped)
+    Write-Host "        Setting up offline uninstaller..." -ForegroundColor Gray
+    try {
+        if ($MyInvocation.MyCommand.Path) {
+            Copy-Item -Path $MyInvocation.MyCommand.Path -Destination "$InstallDir\uninstall.ps1" -Force
+        } else {
+            # Piped execution: fetch raw install script from repo
+            $ScriptUrl = "https://raw.githubusercontent.com/Roodies/lunor-engine/main/install.ps1"
+            Invoke-WebRequest -Uri $ScriptUrl -OutFile "$InstallDir\uninstall.ps1" -UseBasicParsing
+        }
+    } catch { }
+
+    # 5. Register native messaging host registry keys (HKCU)
+    Write-Host "        Registering with browsers..." -ForegroundColor Gray
+    try {
+        $regKeys = @(
+            "HKCU:\SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName",
+            "HKCU:\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\$HostName",
+            "HKCU:\SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
+            "HKCU:\SOFTWARE\Opera Software\Opera Stable\NativeMessagingHosts\$HostName",
+            "HKCU:\SOFTWARE\Vivaldi\NativeMessagingHosts\$HostName"
+        )
+        foreach ($key in $regKeys) {
+            $parent = Split-Path $key
+            if (!(Test-Path $parent)) { New-Item -Path $parent -Force | Out-Null }
+            if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+            Set-Item -Path $key -Value "$InstallDir\manifest.json" | Out-Null
+        }
+    }
+    catch {
+        Write-Host "  WARNING: Failed to write native messaging registry keys." -ForegroundColor Yellow
+    }
+
+    # 6. Register external browser extension registry keys (HKCU)
+    Write-Host "        Registering extension integrations..." -ForegroundColor Gray
+    try {
+        $updateUrl = "https://clients2.google.com/service/update2/crx"
+        $extKeys = @(
+            "HKCU:\Software\Google\Chrome\Extensions\$ExtId",
+            "HKCU:\Software\Microsoft\Edge\Extensions\$ExtId",
+            "HKCU:\Software\BraveSoftware\Brave-Browser\Extensions\$ExtId",
+            "HKCU:\Software\Opera Software\Opera Stable\Extensions\$ExtId",
+            "HKCU:\Software\Vivaldi\Extensions\$ExtId"
+        )
+        foreach ($key in $extKeys) {
+            $parent = Split-Path $key
+            if (!(Test-Path $parent)) { New-Item -Path $parent -Force | Out-Null }
+            if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+            Set-ItemProperty -Path $key -Name "update_url" -Value $updateUrl -Force | Out-Null
+        }
+    }
+    catch {
+        Write-Host "  WARNING: Failed to write extension integration registry keys." -ForegroundColor Yellow
+    }
+
+    # 7. Register Windows Uninstall Entry
+    Write-Host "        Creating Windows Control Panel entry..." -ForegroundColor Gray
+    try {
+        $uninstallKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LunorDownloadEngine"
+        if (!(Test-Path $uninstallKey)) { New-Item -Path $uninstallKey -Force | Out-Null }
+        Set-ItemProperty -Path $uninstallKey -Name "DisplayName" -Value $AppName -Force
+        Set-ItemProperty -Path $uninstallKey -Name "DisplayVersion" -Value "1.0.0" -Force
+        Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value "Lunor" -Force
+        Set-ItemProperty -Path $uninstallKey -Name "InstallLocation" -Value $InstallDir -Force
+        Set-ItemProperty -Path $uninstallKey -Name "DisplayIcon" -Value $ExePath -Force
+        Set-ItemProperty -Path $uninstallKey -Name "UninstallString" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`" --uninstall" -Force
+        Set-ItemProperty -Path $uninstallKey -Name "QuietUninstallString" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`" --uninstall --silent" -Force
+        Set-ItemProperty -Name "NoModify" -Value 1 -PropertyType DWord -Path $uninstallKey -Force
+        Set-ItemProperty -Name "NoRepair" -Value 1 -PropertyType DWord -Path $uninstallKey -Force
+    }
+    catch { }
+
+    # 8. Clean up temp download (only if we downloaded it)
+    if ($tempZip -eq (Join-Path $env:TEMP "payload.zip") -and (Test-Path $tempZip)) {
+        Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+    }
+
+    # 9. Verify installation
     Write-Host "  [3/3] Verifying installation..." -ForegroundColor Gray
     Start-Sleep -Milliseconds 500
     if (Test-HelperInstalled) {
@@ -175,8 +269,7 @@ function Invoke-Install {
     else {
         Write-Host ""
         Write-Host "  WARNING: Installation may not have completed properly." -ForegroundColor Yellow
-        Write-Host "  Try running the installer manually:" -ForegroundColor Yellow
-        Write-Host "  $DownloadUrl" -ForegroundColor Yellow
+        Write-Host "  Try running the installer manually." -ForegroundColor Yellow
         Write-Host ""
     }
 }
