@@ -1,117 +1,226 @@
-# Lunor Download Manager - Native Engine Installer
-# Run: Right-click Start button → Terminal (Admin) → Paste this command:
-# irm https://raw.githubusercontent.com/dextabdb/lunor-engine/main/install.ps1 | iex
+# ============================================================
+# Lunor Download Engine — Unified Installer / Uninstaller
+# ============================================================
+# Usage:
+#   Install:    irm https://raw.githubusercontent.com/Roodies/lunor-engine/main/install.ps1 | iex
+#   Uninstall:  Run the same command again when already installed
+#
+# Flags (when running locally):
+#   .\install.ps1                 # Interactive install or uninstall
+#   .\install.ps1 --silent        # Silent install (no prompts)
+#   .\install.ps1 --uninstall     # Force uninstall without prompting
+# ============================================================
 
-$ErrorActionPreference = "Stop"
-
-# Configuration
-$AppName = "Lunor Engine"
-$HostName = "com.lunor.engine"
-$InstallDir = "$env:LOCALAPPDATA\LunorEngine"
-$ExeName = "DownloadOrganizerHelper.exe"
-$RepoUrl = "https://github.com/dextabdb/lunor-engine/releases/latest/download"
-
-# Styling
-$C1 = "Cyan"
-$C2 = "Yellow"
-$C3 = "Green"
-$C4 = "Red"
-
-Clear-Host
-Write-Host "  _      _    _  _   _   ____  _____  " -ForegroundColor $C1
-Write-Host " | |    | |  | || \ | | / __ \|  __ \ " -ForegroundColor $C1
-Write-Host " | |    | |  | ||  \| || |  | | |__) |" -ForegroundColor $C1
-Write-Host " | |    | |  | || . ` | ||  | |  _  / " -ForegroundColor $C1
-Write-Host " | |____| |__| || |\  || |__| | | \ \ " -ForegroundColor $C1
-Write-Host " |______|\____/ |_| \_| \____/|_|  \_\" -ForegroundColor $C1
-Write-Host " --------------------------------------" -ForegroundColor $C1
-Write-Host "      NATIVE ENGINE INSTALLER v1.0     " -ForegroundColor $C1
-Write-Host ""
-
-# Create install directory
-Write-Host "📁 Preparing installation folder..." -ForegroundColor $C2
-if (!(Test-Path $InstallDir)) {
-    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-}
-
-# Download engine
-$exePath = "$InstallDir\$ExeName"
-$downloadUrl = "$RepoUrl/$ExeName"
-
-Write-Host "⬇️  Downloading core engine..." -ForegroundColor $C2
-try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing -TimeoutSec 30
-    Write-Host "✅ Engine downloaded successfully!" -ForegroundColor $C3
-} catch {
-    Write-Host "❌ Failed to download engine: $_" -ForegroundColor $C4
-    Write-Host "   Check your internet connection or if the release exists." -ForegroundColor $C2
-    Read-Host "Press Enter to exit"
-    exit 1
-}
-
-# Download assets (Icons)
-$icons = @(
-    "icon_audio.ico", "icon_code.ico", "icon_compressed.ico", "icon_doc.ico",
-    "icon_exe.ico", "icon_folder.ico", "icon_image.ico", "icon_pdf.ico",
-    "icon_presentation.ico", "icon_spreadsheet.ico", "icon_video.ico"
+param(
+    [switch]$silent,
+    [switch]$uninstall
 )
 
-Write-Host "⬇️  Fetching visual assets..." -ForegroundColor $C2
-foreach ($icon in $icons) {
-    try {
-        Invoke-WebRequest -Uri "$RepoUrl/$icon" -OutFile "$InstallDir\$icon" -UseBasicParsing -ErrorAction SilentlyContinue
-    } catch { }
+# Also support double-dash string args when piped via irm | iex
+if ($args -contains '--silent')    { $silent    = $true }
+if ($args -contains '--uninstall') { $uninstall = $true }
+
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# ── Constants ──
+$AppName     = "Lunor Download Engine"
+$InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
+$ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
+$HostName    = "com.downloadorganizer.folderhelper"
+$ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
+$DownloadUrl = "https://github.com/Roodies/lunor-engine/releases/latest/download/LunorEngineSetup.exe"
+
+# ── Detection ──
+function Test-HelperInstalled {
+    if (-not (Test-Path $ExePath)) { return $false }
+    $regPath = "HKCU:\SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName"
+    if (Test-Path $regPath) { return $true }
+    if (Test-Path "$InstallDir\manifest.json") { return $true }
+    return $false
 }
 
-# Create manifest.json
-Write-Host "📄 Generating browser manifest..." -ForegroundColor $C2
-$manifestPath = "$InstallDir\manifest.json"
-$manifest = @{
-    name = $HostName
-    description = "Lunor Download Manager - Native Helper"
-    path = $exePath
-    type = "stdio"
-    allowed_origins = @(
-        "chrome-extension://inmcohhgccejkidlofimedccjkllpejn/",
-        "chrome-extension://eianiiieigdplanmjjlchcjpebdcggal/",
-        "chrome-extension://*" # Allows local testing
-    )
-} | ConvertTo-Json
+# ── Uninstall Logic ──
+function Invoke-Uninstall {
+    Write-Host ""
+    Write-Host "  Uninstalling $AppName..." -ForegroundColor Cyan
+    Write-Host ""
 
-$manifest | Out-File -FilePath $manifestPath -Encoding UTF8 -Force
+    # 1. Revert folder changes via helper's built-in uninstaller
+    if (Test-Path $ExePath) {
+        Write-Host "  [1/5] Reverting folder customizations..." -ForegroundColor Gray
+        try {
+            Start-Process -FilePath $ExePath -ArgumentList "--uninstall", "--silent" -Wait -NoNewWindow -ErrorAction SilentlyContinue
+        } catch { }
+    }
 
-# Registry for all major browsers
-$registryPaths = @(
-    "SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName",
-    "SOFTWARE\Microsoft\Edge\NativeMessagingHosts\$HostName",
-    "SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
-    "SOFTWARE\Vivaldi\NativeMessagingHosts\$HostName",
-    "SOFTWARE\Opera Software\Opera Stable\NativeMessagingHosts\$HostName"
-)
+    # 2. Kill running helper processes
+    Write-Host "  [2/5] Stopping helper processes..." -ForegroundColor Gray
+    Get-Process -Name "DownloadOrganizerHelper" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-Write-Host "🔧 Linking with browsers..." -ForegroundColor $C2
-$count = 0
-foreach ($path in $registryPaths) {
-    try {
-        if (!(Test-Path "HKCU:\$path")) {
-            New-Item -Path "HKCU:\$path" -Force | Out-Null
+    # 3. Remove NativeMessagingHosts registry keys (HKCU)
+    Write-Host "  [3/5] Removing browser registrations..." -ForegroundColor Gray
+    @(
+        "SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName",
+        "SOFTWARE\Microsoft\Edge\NativeMessagingHosts\$HostName",
+        "SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
+        "SOFTWARE\Opera Software\Opera Stable\NativeMessagingHosts\$HostName",
+        "SOFTWARE\Vivaldi\NativeMessagingHosts\$HostName"
+    ) | ForEach-Object {
+        Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    # 4. Remove external extension keys + uninstall entry
+    Write-Host "  [4/5] Cleaning up registry entries..." -ForegroundColor Gray
+    @(
+        "Software\Google\Chrome\Extensions\$ExtId",
+        "Software\Microsoft\Edge\Extensions\$ExtId",
+        "Software\BraveSoftware\Brave-Browser\Extensions\$ExtId",
+        "Software\Opera Software\Opera Stable\Extensions\$ExtId",
+        "Software\Vivaldi\Extensions\$ExtId"
+    ) | ForEach-Object {
+        Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LunorDownloadEngine" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 5. Delete install directory
+    Write-Host "  [5/5] Removing installed files..." -ForegroundColor Gray
+    if (Test-Path $InstallDir) {
+        Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host ""
+    Write-Host "  $AppName has been uninstalled successfully." -ForegroundColor Green
+    Write-Host ""
+}
+
+# ── Install Logic ──
+function Invoke-Install {
+    Write-Host ""
+    Write-Host "  ======================================================" -ForegroundColor Cyan
+    Write-Host "     $AppName — Installer" -ForegroundColor Cyan
+    Write-Host "  ======================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    $tempExe = Join-Path $env:TEMP "LunorEngineSetup.exe"
+
+    # 1. Check for local copy first (for offline/dev installs)
+    $localExe = Join-Path $PSScriptRoot "LunorEngineSetup.exe"
+    $localExeFallback = Join-Path $PSScriptRoot "installer\Output\LunorEngineSetup.exe"
+
+    if ($PSScriptRoot -and (Test-Path $localExe)) {
+        Write-Host "  [1/3] Using local installer: $localExe" -ForegroundColor Gray
+        $tempExe = $localExe
+    }
+    elseif ($PSScriptRoot -and (Test-Path $localExeFallback)) {
+        Write-Host "  [1/3] Using local installer: $localExeFallback" -ForegroundColor Gray
+        $tempExe = $localExeFallback
+    }
+    else {
+        # Download from GitHub
+        Write-Host "  [1/3] Downloading installer..." -ForegroundColor Gray
+        try {
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $tempExe -UseBasicParsing
+            Write-Host "         Downloaded successfully." -ForegroundColor Green
         }
-        Set-ItemProperty -Path "HKCU:\$path" -Name "(Default)" -Value $manifestPath
-        $count++
-    } catch { }
+        catch {
+            Write-Host ""
+            Write-Host "  ERROR: Failed to download the installer." -ForegroundColor Red
+            Write-Host "  URL: $DownloadUrl" -ForegroundColor Red
+            Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  Please check your internet connection and try again." -ForegroundColor Yellow
+            Write-Host "  Or download manually from:" -ForegroundColor Yellow
+            Write-Host "  $DownloadUrl" -ForegroundColor Yellow
+            Write-Host ""
+            return
+        }
+    }
+
+    # 2. Run the installer silently
+    Write-Host "  [2/3] Installing engine..." -ForegroundColor Gray
+    try {
+        Start-Process -FilePath $tempExe -ArgumentList "--silent" -Wait -NoNewWindow
+    }
+    catch {
+        Write-Host ""
+        Write-Host "  ERROR: Failed to run the installer." -ForegroundColor Red
+        Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    # 3. Clean up temp download (only if we downloaded it)
+    if ($tempExe -eq (Join-Path $env:TEMP "LunorEngineSetup.exe") -and (Test-Path $tempExe)) {
+        Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
+    }
+
+    # 4. Verify installation
+    Write-Host "  [3/3] Verifying installation..." -ForegroundColor Gray
+    Start-Sleep -Milliseconds 500
+    if (Test-HelperInstalled) {
+        Write-Host ""
+        Write-Host "  ======================================================" -ForegroundColor Green
+        Write-Host "     $AppName installed successfully!" -ForegroundColor Green
+        Write-Host "  ======================================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  Close ALL browser windows and reopen your browser." -ForegroundColor White
+        Write-Host "  The extension will auto-connect to the helper." -ForegroundColor White
+        Write-Host ""
+    }
+    else {
+        Write-Host ""
+        Write-Host "  WARNING: Installation may not have completed properly." -ForegroundColor Yellow
+        Write-Host "  Try running the installer manually:" -ForegroundColor Yellow
+        Write-Host "  $DownloadUrl" -ForegroundColor Yellow
+        Write-Host ""
+    }
 }
 
-Write-Host "✅ Linked with $count browser(s)!" -ForegroundColor $C3
+# ── Main Entry Point ──
+$isInstalled = Test-HelperInstalled
 
-# Verification
-Write-Host "🧪 Verifying engine..." -ForegroundColor $C2
-if (Test-Path $exePath) {
-    $test = Start-Process -FilePath $exePath -ArgumentList "--test" -NoNewWindow -PassThru -Wait
-    Write-Host "✅ Engine verified!" -ForegroundColor $C3
+if ($uninstall) {
+    # Force uninstall mode
+    if ($isInstalled) {
+        Invoke-Uninstall
+    }
+    else {
+        Write-Host ""
+        Write-Host "  $AppName is not installed. Nothing to uninstall." -ForegroundColor Yellow
+        Write-Host ""
+    }
 }
-
-Write-Host "`n🚀 LUNOR ENGINE INSTALLED SUCCESSFULLY!" -ForegroundColor $C3
-Write-Host "   Restart your browser to activate the changes.`n" -ForegroundColor $C1
-
-Write-Host "Install Path: $InstallDir" -ForegroundColor Gray
-Read-Host "Press Enter to finish"
+elseif ($isInstalled) {
+    # Already installed — act as uninstaller
+    if ($silent) {
+        # Silent mode: just inform, don't uninstall without explicit --uninstall flag
+        Write-Host ""
+        Write-Host "  $AppName is already installed." -ForegroundColor Green
+        Write-Host "  To uninstall, run with --uninstall flag." -ForegroundColor Gray
+        Write-Host ""
+    }
+    else {
+        Write-Host ""
+        Write-Host "  ======================================================" -ForegroundColor Cyan
+        Write-Host "     $AppName — Already Installed" -ForegroundColor Cyan
+        Write-Host "  ======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  The helper is already installed at:" -ForegroundColor White
+        Write-Host "  $InstallDir" -ForegroundColor Gray
+        Write-Host ""
+        $choice = Read-Host "  Would you like to uninstall it? (Y/N)"
+        if ($choice -match '^[Yy]') {
+            Invoke-Uninstall
+        }
+        else {
+            Write-Host ""
+            Write-Host "  No changes made. Helper remains installed." -ForegroundColor Green
+            Write-Host ""
+        }
+    }
+}
+else {
+    # Not installed — install
+    Invoke-Install
+}
