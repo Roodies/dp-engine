@@ -1,8 +1,8 @@
 # ============================================================
-# Lunor Download Engine - Unified Installer / Uninstaller
+# DP_Engine - Unified Installer / Uninstaller
 # ============================================================
 # Usage:
-#   Install:    irm https://raw.githubusercontent.com/Roodies/lunor-engine/main/install.ps1 | iex
+#   Install:    irm https://raw.githubusercontent.com/Roodies/dp-engine/main/install.ps1 | iex
 #   Uninstall:  Run the same command again when already installed
 #
 # Flags (when running locally):
@@ -24,12 +24,12 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # -- Constants --
-$AppName     = "Lunor Download Engine"
+$AppName     = "DP_Engine"
 $InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
 $ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
 $HostName    = "com.downloadorganizer.folderhelper"
 $ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
-$DownloadUrl = "https://github.com/Roodies/lunor-engine/releases/latest/download/payload.zip"
+$DownloadUrl = "https://github.com/Roodies/dp-engine/releases/latest/download/payload.zip"
 
 # -- Detection --
 function Test-HelperInstalled {
@@ -81,7 +81,7 @@ function Invoke-Uninstall {
     ) | ForEach-Object {
         Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LunorDownloadEngine" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DP_Engine" -Recurse -Force -ErrorAction SilentlyContinue
 
     # 5. Delete install directory
     Write-Host "  [5/5] Removing installed files..." -ForegroundColor Gray
@@ -183,7 +183,7 @@ function Invoke-Install {
             Copy-Item -Path $MyInvocation.MyCommand.Path -Destination "$InstallDir\uninstall.ps1" -Force
         } else {
             # Piped execution: fetch raw install script from repo
-            $ScriptUrl = "https://raw.githubusercontent.com/Roodies/lunor-engine/main/install.ps1"
+            $ScriptUrl = "https://raw.githubusercontent.com/Roodies/dp-engine/main/install.ps1"
             Invoke-WebRequest -Uri $ScriptUrl -OutFile "$InstallDir\uninstall.ps1" -UseBasicParsing
         }
     } catch { }
@@ -234,11 +234,11 @@ function Invoke-Install {
     # 7. Register Windows Uninstall Entry
     Write-Host "        Creating Windows Control Panel entry..." -ForegroundColor Gray
     try {
-        $uninstallKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LunorDownloadEngine"
+        $uninstallKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DP_Engine"
         if (!(Test-Path $uninstallKey)) { New-Item -Path $uninstallKey -Force | Out-Null }
         Set-ItemProperty -Path $uninstallKey -Name "DisplayName" -Value $AppName -Force
         Set-ItemProperty -Path $uninstallKey -Name "DisplayVersion" -Value "1.0.0" -Force
-        Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value "Lunor" -Force
+        Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value "DP_Engine" -Force
         Set-ItemProperty -Path $uninstallKey -Name "InstallLocation" -Value $InstallDir -Force
         Set-ItemProperty -Path $uninstallKey -Name "DisplayIcon" -Value $ExePath -Force
         Set-ItemProperty -Path $uninstallKey -Name "UninstallString" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`" --uninstall" -Force
