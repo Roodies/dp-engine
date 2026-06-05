@@ -1,5 +1,5 @@
 # ============================================================
-# DP_Engine - Unified Installer / Uninstaller
+# DownloadPilot Engine - Unified Installer / Uninstaller
 # ============================================================
 # Usage:
 #   Install:    irm https://raw.githubusercontent.com/Roodies/dp-engine/main/install.ps1 | iex
@@ -24,12 +24,12 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # -- Constants --
-$AppName     = "DP_Engine"
+$AppName     = "DownloadPilot Engine"
 $InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
 $ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
 $HostName    = "com.downloadorganizer.folderhelper"
 $ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
-$DownloadUrl = "https://github.com/Roodies/dp-engine/releases/latest/download/payload.zip"
+$DownloadUrl = "https://raw.githubusercontent.com/Roodies/dp-engine/main/payload.zip"
 
 # -- Detection --
 function Test-HelperInstalled {
@@ -81,7 +81,7 @@ function Invoke-Uninstall {
     ) | ForEach-Object {
         Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DP_Engine" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DownloadPilotEngine" -Recurse -Force -ErrorAction SilentlyContinue
 
     # 5. Delete install directory
     Write-Host "  [5/5] Removing installed files..." -ForegroundColor Gray
@@ -167,7 +167,8 @@ function Invoke-Install {
             type = "stdio"
             allowed_origins = @(
                 "chrome-extension://ddmkkklonogdgngnhpfmidconkgfkjic/",
-                "chrome-extension://eianiiieigdplanmjjlchcjpebdcggal/"
+                "chrome-extension://eianiiieigdplanmjjlchcjpebdcggal/",
+                "chrome-extension://jlaoiphlphakdkbdnfbkmognkepocidc/"
             )
         }
         $manifest | ConvertTo-Json -Depth 5 | Out-File -FilePath "$InstallDir\manifest.json" -Encoding utf8 -Force
@@ -234,11 +235,11 @@ function Invoke-Install {
     # 7. Register Windows Uninstall Entry
     Write-Host "        Creating Windows Control Panel entry..." -ForegroundColor Gray
     try {
-        $uninstallKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DP_Engine"
+        $uninstallKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DownloadPilotEngine"
         if (!(Test-Path $uninstallKey)) { New-Item -Path $uninstallKey -Force | Out-Null }
         Set-ItemProperty -Path $uninstallKey -Name "DisplayName" -Value $AppName -Force
         Set-ItemProperty -Path $uninstallKey -Name "DisplayVersion" -Value "1.0.0" -Force
-        Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value "DP_Engine" -Force
+        Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value "DownloadPilot" -Force
         Set-ItemProperty -Path $uninstallKey -Name "InstallLocation" -Value $InstallDir -Force
         Set-ItemProperty -Path $uninstallKey -Name "DisplayIcon" -Value $ExePath -Force
         Set-ItemProperty -Path $uninstallKey -Name "UninstallString" -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`" --uninstall" -Force
