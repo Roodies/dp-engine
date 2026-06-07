@@ -24,12 +24,13 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # -- Constants --
-$AppName     = "DownloadPilot Engine"
-$InstallDir  = "$env:LOCALAPPDATA\DownloadOrganizerPro"
-$ExePath     = "$InstallDir\DownloadOrganizerHelper.exe"
-$HostName    = "com.downloadorganizer.folderhelper"
-$ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
-$DownloadUrl = "https://raw.githubusercontent.com/Roodies/dp-engine/main/payload.zip"
+$AppName      = "DownloadPilot Engine"
+$InstallDir   = "$env:LOCALAPPDATA\DownloadOrganizerPro"
+$ExePath      = "$InstallDir\DownloadOrganizerHelper.exe"
+$HostName     = "com.downloadorganizer.folderhelper"
+$ExtId        = "eianiiieigdplanmjjlchcjpebdcggal"
+$DownloadUrl  = "https://raw.githubusercontent.com/Roodies/dp-engine/main/payload.zip"
+$PayloadHash  = "17A29D61FD394900D5B980E8351910B61D941E57BD67B69D17FF918065D82D54"
 
 # -- Detection --
 function Test-HelperInstalled {
@@ -102,7 +103,7 @@ function Invoke-Install {
     Write-Host "  ======================================================" -ForegroundColor Cyan
     Write-Host ""
 
-    $tempZip = Join-Path $env:TEMP "payload.zip"
+    $tempZip = Join-Path $env:TEMP "payload_$([System.IO.Path]::GetRandomFileName()).zip"
 
     # 1. Check for local payload first (for offline/dev installs)
     $localZip = $null
@@ -113,16 +114,16 @@ function Invoke-Install {
     }
 
     if ($localZip -and (Test-Path $localZip)) {
-        Write-Host "  [1/3] Using local payload: $localZip" -ForegroundColor Gray
+        Write-Host "  [1/4] Using local payload: $localZip" -ForegroundColor Gray
         $tempZip = $localZip
     }
     elseif ($localZipFallback -and (Test-Path $localZipFallback)) {
-        Write-Host "  [1/3] Using local payload: $localZipFallback" -ForegroundColor Gray
+        Write-Host "  [1/4] Using local payload: $localZipFallback" -ForegroundColor Gray
         $tempZip = $localZipFallback
     }
     else {
         # Download from GitHub
-        Write-Host "  [1/3] Downloading payload archive..." -ForegroundColor Gray
+        Write-Host "  [1/4] Downloading payload archive..." -ForegroundColor Gray
         try {
             Invoke-WebRequest -Uri $DownloadUrl -OutFile $tempZip -UseBasicParsing
             Write-Host "         Downloaded successfully." -ForegroundColor Green
@@ -137,8 +138,36 @@ function Invoke-Install {
         }
     }
 
-    # 2. Extract payload directly to local appdata folder
-    Write-Host "  [2/3] Installing engine files..." -ForegroundColor Gray
+    # Verify payload integrity via SHA-256 hash
+    Write-Host "  [2/4] Verifying payload integrity..." -ForegroundColor Gray
+    try {
+        $fileHash = (Get-FileHash -Path $tempZip -Algorithm SHA256).Hash
+        if ($fileHash -ne $PayloadHash) {
+            Write-Host ""
+            Write-Host "  ERROR: Payload integrity check FAILED." -ForegroundColor Red
+            Write-Host "  Expected: $PayloadHash" -ForegroundColor Red
+            Write-Host "  Got:      $fileHash" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  The downloaded file may have been tampered with." -ForegroundColor Red
+            Write-Host "  Please re-download the installer from the official repository." -ForegroundColor Red
+            Write-Host ""
+            if ($tempZip -ne $localZip -and $tempZip -ne $localZipFallback) {
+                Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+            }
+            return
+        }
+        Write-Host "         Integrity verified (SHA-256 match)." -ForegroundColor Green
+    }
+    catch {
+        Write-Host ""
+        Write-Host "  ERROR: Could not verify payload integrity." -ForegroundColor Red
+        Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    # 3. Extract payload directly to local appdata folder
+    Write-Host "  [3/4] Installing engine files..." -ForegroundColor Gray
     try {
         if (Test-Path $InstallDir) {
             # Try to stop running instances first
@@ -250,12 +279,12 @@ function Invoke-Install {
     catch { }
 
     # 8. Clean up temp download (only if we downloaded it)
-    if ($tempZip -eq (Join-Path $env:TEMP "payload.zip") -and (Test-Path $tempZip)) {
+    if ($tempZip -ne $localZip -and $tempZip -ne $localZipFallback -and (Test-Path $tempZip)) {
         Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     }
 
     # 9. Verify installation
-    Write-Host "  [3/3] Verifying installation..." -ForegroundColor Gray
+    Write-Host "  [4/4] Verifying installation..." -ForegroundColor Gray
     Start-Sleep -Milliseconds 500
     if (Test-HelperInstalled) {
         Write-Host ""
