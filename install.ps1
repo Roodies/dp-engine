@@ -50,8 +50,11 @@ function Invoke-Uninstall {
     if (Test-Path $ExePath) {
         Write-Host "  [1/5] Reverting folder customizations..." -ForegroundColor Gray
         try {
-            Start-Process -FilePath $ExePath -ArgumentList "--uninstall", "--silent" -Wait -NoNewWindow -ErrorAction SilentlyContinue
-        } catch { }
+            Start-Process -FilePath $ExePath -ArgumentList "--uninstall", "--silent" -Wait -NoNewWindow
+        } catch {
+            Write-Host "  WARNING: Helper uninstaller failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "           Continuing with manual cleanup..." -ForegroundColor Yellow
+        }
     }
 
     # 2. Kill running helper processes
@@ -133,7 +136,7 @@ function Invoke-Install {
             Write-Host "  URL: $DownloadUrl" -ForegroundColor Red
             Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host ""
-            return
+            exit 1
         }
     }
 
@@ -154,7 +157,7 @@ function Invoke-Install {
         Write-Host "  ERROR: Failed to install engine files." -ForegroundColor Red
         Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host ""
-        return
+        exit 1
     }
 
     # 3. Generate native messaging manifest json
@@ -175,6 +178,7 @@ function Invoke-Install {
     }
     catch {
         Write-Host "  WARNING: Failed to generate native messaging manifest." -ForegroundColor Yellow
+        Write-Host "           $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
     # 4. Copy uninstaller script (download if piped)
@@ -187,7 +191,10 @@ function Invoke-Install {
             $ScriptUrl = "https://raw.githubusercontent.com/Roodies/dp-engine/main/install.ps1"
             Invoke-WebRequest -Uri $ScriptUrl -OutFile "$InstallDir\uninstall.ps1" -UseBasicParsing
         }
-    } catch { }
+    } catch {
+        Write-Host "  WARNING: Could not save offline uninstaller: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "           You can still uninstall by re-running the online installer." -ForegroundColor Yellow
+    }
 
     # 5. Register native messaging host registry keys (HKCU)
     Write-Host "        Registering with browsers..." -ForegroundColor Gray
@@ -208,6 +215,7 @@ function Invoke-Install {
     }
     catch {
         Write-Host "  WARNING: Failed to write native messaging registry keys." -ForegroundColor Yellow
+        Write-Host "           $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
     # 6. Register external browser extension registry keys (HKCU)
@@ -230,6 +238,7 @@ function Invoke-Install {
     }
     catch {
         Write-Host "  WARNING: Failed to write extension integration registry keys." -ForegroundColor Yellow
+        Write-Host "           $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
     # 7. Register Windows Uninstall Entry
@@ -247,7 +256,10 @@ function Invoke-Install {
         Set-ItemProperty -Name "NoModify" -Value 1 -PropertyType DWord -Path $uninstallKey -Force
         Set-ItemProperty -Name "NoRepair" -Value 1 -PropertyType DWord -Path $uninstallKey -Force
     }
-    catch { }
+    catch {
+        Write-Host "  WARNING: Failed to create Control Panel uninstall entry." -ForegroundColor Yellow
+        Write-Host "           $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 
     # 8. Clean up temp download (only if we downloaded it)
     if ($tempZip -eq (Join-Path $env:TEMP "payload.zip") -and (Test-Path $tempZip)) {
@@ -270,8 +282,10 @@ function Invoke-Install {
     else {
         Write-Host ""
         Write-Host "  WARNING: Installation may not have completed properly." -ForegroundColor Yellow
-        Write-Host "  Try running the installer manually." -ForegroundColor Yellow
+        Write-Host "  The executable or registry entries could not be verified." -ForegroundColor Yellow
+        Write-Host "  Try running the installer again as Administrator." -ForegroundColor Yellow
         Write-Host ""
+        exit 1
     }
 }
 
