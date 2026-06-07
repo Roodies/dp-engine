@@ -31,6 +31,40 @@ $HostName    = "com.downloadorganizer.folderhelper"
 $ExtId       = "eianiiieigdplanmjjlchcjpebdcggal"
 $DownloadUrl = "https://raw.githubusercontent.com/Roodies/dp-engine/main/payload.zip"
 
+# -- Browser Vendor Paths (single source of truth) --
+$BrowserVendors = @(
+    "Google\Chrome",
+    "Microsoft\Edge",
+    "BraveSoftware\Brave-Browser",
+    "Opera Software\Opera Stable",
+    "Vivaldi"
+)
+
+# -- Shared Helpers --
+function Get-NativeHostRegPaths {
+    $BrowserVendors | ForEach-Object { "HKCU:\SOFTWARE\$_\NativeMessagingHosts\$HostName" }
+}
+
+function Get-ExtensionRegPaths {
+    $BrowserVendors | ForEach-Object { "HKCU:\Software\$_\Extensions\$ExtId" }
+}
+
+function Set-RegistryKeyValue {
+    param(
+        [string]$Path,
+        [string]$Value,
+        [string]$PropertyName = $null
+    )
+    $parent = Split-Path $Path
+    if (!(Test-Path $parent)) { New-Item -Path $parent -Force | Out-Null }
+    if (!(Test-Path $Path))   { New-Item -Path $Path   -Force | Out-Null }
+    if ($PropertyName) {
+        Set-ItemProperty -Path $Path -Name $PropertyName -Value $Value -Force | Out-Null
+    } else {
+        Set-Item -Path $Path -Value $Value | Out-Null
+    }
+}
+
 # -- Detection --
 function Test-HelperInstalled {
     if (-not (Test-Path $ExePath)) { return $false }
@@ -60,26 +94,14 @@ function Invoke-Uninstall {
 
     # 3. Remove NativeMessagingHosts registry keys (HKCU)
     Write-Host "  [3/5] Removing browser registrations..." -ForegroundColor Gray
-    @(
-        "SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName",
-        "SOFTWARE\Microsoft\Edge\NativeMessagingHosts\$HostName",
-        "SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
-        "SOFTWARE\Opera Software\Opera Stable\NativeMessagingHosts\$HostName",
-        "SOFTWARE\Vivaldi\NativeMessagingHosts\$HostName"
-    ) | ForEach-Object {
-        Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
+    Get-NativeHostRegPaths | ForEach-Object {
+        Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 4. Remove external extension keys + uninstall entry
     Write-Host "  [4/5] Cleaning up registry entries..." -ForegroundColor Gray
-    @(
-        "Software\Google\Chrome\Extensions\$ExtId",
-        "Software\Microsoft\Edge\Extensions\$ExtId",
-        "Software\BraveSoftware\Brave-Browser\Extensions\$ExtId",
-        "Software\Opera Software\Opera Stable\Extensions\$ExtId",
-        "Software\Vivaldi\Extensions\$ExtId"
-    ) | ForEach-Object {
-        Remove-Item "HKCU:\$_" -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ExtensionRegPaths | ForEach-Object {
+        Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue
     }
     Remove-Item "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DownloadPilotEngine" -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -192,18 +214,8 @@ function Invoke-Install {
     # 5. Register native messaging host registry keys (HKCU)
     Write-Host "        Registering with browsers..." -ForegroundColor Gray
     try {
-        $regKeys = @(
-            "HKCU:\SOFTWARE\Google\Chrome\NativeMessagingHosts\$HostName",
-            "HKCU:\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\$HostName",
-            "HKCU:\SOFTWARE\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
-            "HKCU:\SOFTWARE\Opera Software\Opera Stable\NativeMessagingHosts\$HostName",
-            "HKCU:\SOFTWARE\Vivaldi\NativeMessagingHosts\$HostName"
-        )
-        foreach ($key in $regKeys) {
-            $parent = Split-Path $key
-            if (!(Test-Path $parent)) { New-Item -Path $parent -Force | Out-Null }
-            if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
-            Set-Item -Path $key -Value "$InstallDir\manifest.json" | Out-Null
+        Get-NativeHostRegPaths | ForEach-Object {
+            Set-RegistryKeyValue -Path $_ -Value "$InstallDir\manifest.json"
         }
     }
     catch {
@@ -214,18 +226,8 @@ function Invoke-Install {
     Write-Host "        Registering extension integrations..." -ForegroundColor Gray
     try {
         $updateUrl = "https://clients2.google.com/service/update2/crx"
-        $extKeys = @(
-            "HKCU:\Software\Google\Chrome\Extensions\$ExtId",
-            "HKCU:\Software\Microsoft\Edge\Extensions\$ExtId",
-            "HKCU:\Software\BraveSoftware\Brave-Browser\Extensions\$ExtId",
-            "HKCU:\Software\Opera Software\Opera Stable\Extensions\$ExtId",
-            "HKCU:\Software\Vivaldi\Extensions\$ExtId"
-        )
-        foreach ($key in $extKeys) {
-            $parent = Split-Path $key
-            if (!(Test-Path $parent)) { New-Item -Path $parent -Force | Out-Null }
-            if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
-            Set-ItemProperty -Path $key -Name "update_url" -Value $updateUrl -Force | Out-Null
+        Get-ExtensionRegPaths | ForEach-Object {
+            Set-RegistryKeyValue -Path $_ -PropertyName "update_url" -Value $updateUrl
         }
     }
     catch {
